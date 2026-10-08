@@ -6,6 +6,7 @@ export type ProductQuery = {
   minNaira?: number;
   maxNaira?: number;
   skinType?: string;
+  flag?: "featured" | "new" | "best";
   sort: "newest" | "price_asc" | "price_desc" | "popular" | "rating";
   page: number;
   limit: number;
@@ -19,6 +20,12 @@ const SELECT = `
          p.image_url AS "imageUrl", p.created_at AS "createdAt",
          c.slug AS "categorySlug", c.name AS "categoryName"
   FROM products p JOIN categories c ON c.id = p.category_id`;
+
+const FLAGS = {
+  featured: "p.is_featured = true",
+  new: "p.is_new = true",
+  best: "p.is_best_seller = true",
+} as const;
 
 const ORDER: Record<ProductQuery["sort"], string> = {
   newest: "p.created_at DESC",
@@ -41,6 +48,7 @@ export async function listProducts(q: ProductQuery) {
   if (q.minNaira !== undefined) add("p.price_kobo >= ?", q.minNaira * 100);
   if (q.maxNaira !== undefined) add("p.price_kobo <= ?", q.maxNaira * 100);
   if (q.skinType) add("? = ANY(p.skin_types)", q.skinType);
+  if (q.flag) where.push(FLAGS[q.flag]);
 
   const whereSql = `WHERE ${where.join(" AND ")}`;
   const total = (

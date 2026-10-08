@@ -6,6 +6,9 @@ if (!env.DATABASE_URL) {
   process.exit(1);
 }
 
+// Postgres returns bigint (money in kobo) as text by default. Convert to a normal number.
+pg.types.setTypeParser(20, (value) => Number(value));
+
 // Railway's public proxy address needs SSL; its private network address does not.
 const needsSsl = env.DATABASE_URL.includes("rlwy.net");
 

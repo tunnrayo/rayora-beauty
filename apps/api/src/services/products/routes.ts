@@ -14,6 +14,7 @@ const listSchema = z.object({
   minPrice: z.coerce.number().int().min(0).optional(),
   maxPrice: z.coerce.number().int().min(0).optional(),
   skinType: z.string().trim().max(30).optional(),
+  flag: z.enum(["featured", "new", "best"]).optional(),
   sort: z.enum(["newest", "price_asc", "price_desc", "popular", "rating"]).default("newest"),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(48).default(12),

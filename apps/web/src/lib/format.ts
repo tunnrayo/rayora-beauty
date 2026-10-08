@@ -8,3 +8,8 @@ const naira = new Intl.NumberFormat("en-NG", {
 export function formatNaira(amount: number): string {
   return naira.format(amount);
 }
+
+/** Prices are stored in kobo (100 kobo = ₦1). This formats a kobo amount as naira. */
+export function formatKobo(kobo: number): string {
+  return naira.format(kobo / 100);
+}
