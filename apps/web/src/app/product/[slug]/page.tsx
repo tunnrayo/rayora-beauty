@@ -1,14 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getProduct, getProducts } from "@/lib/api";
+import { getProduct, getProducts, getReviews } from "@/lib/api";
+import { addToCartAction } from "@/actions/cart";
+import { toggleWishlistAction } from "@/actions/account";
+import { apiCall, getSession } from "@/lib/session";
+import FormMessage from "@/components/FormMessage";
+import QuantityInput from "@/components/QuantityInput";
+import ReviewForm from "@/components/ReviewForm";
+import SubmitButton from "@/components/SubmitButton";
 import { formatKobo } from "@/lib/format";
 import ProductImage from "@/components/ProductImage";
 import ProductCard from "@/components/ProductCard";
 import Rating from "@/components/Rating";
 import Notice from "@/components/Notice";
 
-type Props = { params: Promise<{ slug: string }> };
+type Props = { params: Promise<{ slug: string }>; searchParams?: Promise<{ cartError?: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
@@ -21,8 +28,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function ProductPage({ params }: Props) {
+export default async function ProductPage({ params, searchParams }: Props) {
   const { slug } = await params;
+  const cartError = (await searchParams)?.cartError;
   const result = await getProduct(slug);
 
   if (result.notFound) notFound();
@@ -38,7 +46,16 @@ export default async function ProductPage({ params }: Props) {
   }
 
   const p = result.data;
-  const related = await getProducts({ category: p.categorySlug, limit: 5 });
+  const [related, reviews, user] = await Promise.all([
+    getProducts({ category: p.categorySlug, limit: 5 }),
+    getReviews(slug),
+    getSession(),
+  ]);
+  let wished = false;
+  if (user) {
+    const wl = await apiCall<{ items: { id: string }[] }>("/users/wishlist", { auth: true });
+    wished = Boolean(wl.data?.items.some((w) => w.id === p.id));
+  }
   const relatedItems = (related.data?.items ?? []).filter((x) => x.id !== p.id).slice(0, 4);
 
   const soldOut = p.stock <= 0;
@@ -127,14 +144,35 @@ export default async function ProductPage({ params }: Props) {
             </p>
           )}
 
-          <div className="mt-6 rounded-2xl bg-blush/40 p-4 text-sm text-cocoa">
-            Adding to cart arrives with the checkout update. In the meantime you can order this product by WhatsApp.
+          <div className="mt-6 space-y-3">
+            <FormMessage error={cartError} />
+            {soldOut ? (
+              <p className="rounded-xl bg-blush px-4 py-3 text-sm">This product is out of stock right now. Save it to your wishlist and check back soon.</p>
+            ) : (
+              <form action={addToCartAction} className="flex flex-wrap items-center gap-3">
+                <input type="hidden" name="productId" value={p.id} />
+                <input type="hidden" name="slug" value={p.slug} />
+                <QuantityInput max={Math.min(p.stock, 20)} />
+                <SubmitButton pendingText="Adding...">Add to Cart</SubmitButton>
+                <SubmitButton className="btn-secondary" pendingText="One moment..." name="intent" value="buy">
+                  Buy Now
+                </SubmitButton>
+              </form>
+            )}
+            <form action={toggleWishlistAction}>
+              <input type="hidden" name="productId" value={p.id} />
+              <input type="hidden" name="slug" value={p.slug} />
+              <input type="hidden" name="wished" value={wished ? "1" : "0"} />
+              <button type="submit" className="text-sm underline underline-offset-4">
+                {wished ? "Remove from wishlist" : "Save to wishlist"}
+              </button>
+            </form>
+            {whatsappHref && (
+              <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="block text-sm underline underline-offset-4">
+                Prefer to order on WhatsApp?
+              </a>
+            )}
           </div>
-          {whatsappHref && (
-            <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-primary mt-4">
-              Order on WhatsApp
-            </a>
-          )}
         </div>
       </div>
 
@@ -145,10 +183,23 @@ export default async function ProductPage({ params }: Props) {
         </div>
         <div>
           <h2 className="text-2xl font-semibold">Customer reviews</h2>
-          <p className="mt-2 text-sm leading-relaxed text-cocoa">
-            Rated {p.rating.toFixed(1)} out of 5 by {p.reviewCount} customers. Written reviews will appear here
-            once customer accounts open.
-          </p>
+          <p className="mt-2 text-sm text-cocoa">Rated {p.rating.toFixed(1)} out of 5 from {p.reviewCount} customers.</p>
+          {reviews.length > 0 && (
+            <ul className="mt-4 space-y-4">
+              {reviews.map((r) => (
+                <li key={r.id} className="rounded-2xl border border-blush bg-ivory p-4 text-sm">
+                  <p className="font-medium">{"★".repeat(r.rating)}{r.title && ` ${r.title}`}</p>
+                  {r.body && <p className="mt-1 text-cocoa">{r.body}</p>}
+                  <p className="mt-1 text-xs text-cocoa">{r.firstName}, {new Date(r.createdAt).toLocaleDateString("en-NG", { dateStyle: "medium" })}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {user ? (
+            <ReviewForm slug={p.slug} />
+          ) : (
+            <p className="mt-4 text-sm"><Link href={`/login?next=${encodeURIComponent(`/product/${p.slug}`)}`} className="underline underline-offset-4">Log in</Link> to write a review.</p>
+          )}
         </div>
       </section>
 

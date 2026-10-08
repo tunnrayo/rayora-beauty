@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getCategories, getProducts } from "@/lib/api";
+import { getBanners, getCategories, getProducts } from "@/lib/api";
 import ProductRow from "@/components/ProductRow";
 
 const testimonials = [
@@ -9,15 +9,22 @@ const testimonials = [
 ];
 
 export default async function HomePage() {
-  const [cats, featured, best, fresh] = await Promise.all([
+  const [cats, featured, best, fresh, banners] = await Promise.all([
     getCategories(),
     getProducts({ flag: "featured", limit: 4 }),
     getProducts({ flag: "best", limit: 4 }),
     getProducts({ flag: "new", limit: 4 }),
+    getBanners(),
   ]);
 
   return (
     <>
+      {banners[0] && (
+        <Link href={banners[0].linkUrl} className="block bg-charcoal px-4 py-2 text-center text-sm text-ivory">
+          <strong>{banners[0].title}</strong>
+          {banners[0].subtitle && <span> · {banners[0].subtitle}</span>}
+        </Link>
+      )}
       <section className="bg-blush/40">
         <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 py-14 md:grid-cols-2 md:py-20">
           <div>

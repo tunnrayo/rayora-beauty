@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import { Cormorant_Garamond, Inter } from "next/font/google";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import SiteChrome from "@/components/SiteChrome";
+import Tracker from "@/components/Tracker";
+import ChatWidget from "@/components/ChatWidget";
+import { getCart, getSession } from "@/lib/session";
 import "./globals.css";
 
 const serif = Cormorant_Garamond({
@@ -20,13 +24,19 @@ export const metadata: Metadata = {
     "Shop skincare, makeup, body care and fragrance at Rayora Beauty. Inclusive shades and products for Nigerian and African skin, delivered nationwide.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const [user, cart] = await Promise.all([getSession(), getCart()]);
+
   return (
     <html lang="en" className={`${serif.variable} ${sans.variable}`}>
       <body>
-        <Header />
-        <main>{children}</main>
-        <Footer />
+        <SiteChrome
+          header={<Header cartCount={cart?.itemCount ?? 0} userName={user?.fullName ?? null} />}
+          footer={<Footer />}
+          extras={<><Tracker /><ChatWidget /></>}
+        >
+          {children}
+        </SiteChrome>
       </body>
     </html>
   );

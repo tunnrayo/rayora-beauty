@@ -11,8 +11,10 @@ const links = [
   { href: "/fragrance", label: "Fragrance" },
 ];
 
-export default function Header() {
+export default function Header({ cartCount, userName }: { cartCount: number; userName: string | null }) {
   const [open, setOpen] = useState(false);
+  const accountHref = userName ? "/account" : "/login";
+  const accountLabel = userName ? userName.split(" ")[0] : "Log in";
 
   return (
     <header className="sticky top-0 z-40 border-b border-blush bg-ivory/95 backdrop-blur">
@@ -36,18 +38,18 @@ export default function Header() {
 
         <nav aria-label="Main" className="hidden gap-6 text-sm md:flex">
           {links.map((l) => (
-            <Link key={l.href} href={l.href} className="hover:text-rose">
+            <Link key={l.href} href={l.href} className="hover:text-rose-dark">
               {l.label}
             </Link>
           ))}
         </nav>
 
         <div className="flex items-center gap-4 text-sm">
-          <Link href="/login" className="hidden hover:text-rose sm:block">
-            Account
+          <Link href={accountHref} className="hidden hover:text-rose-dark sm:block">
+            {accountLabel}
           </Link>
-          <Link href="/cart" className="font-medium hover:text-rose">
-            Cart
+          <Link href="/cart" className="font-medium hover:text-rose-dark" aria-label={`Cart, ${cartCount} items`}>
+            Cart{cartCount > 0 && <span className="ml-1 rounded-full bg-charcoal px-2 py-0.5 text-xs text-ivory">{cartCount}</span>}
           </Link>
         </div>
       </div>
@@ -71,18 +73,14 @@ export default function Header() {
           <ul className="mx-auto max-w-6xl px-4 py-2">
             {links.map((l) => (
               <li key={l.href}>
-                <Link
-                  href={l.href}
-                  onClick={() => setOpen(false)}
-                  className="block border-b border-blush/60 py-3 text-base"
-                >
+                <Link href={l.href} onClick={() => setOpen(false)} className="block border-b border-blush/60 py-3 text-base">
                   {l.label}
                 </Link>
               </li>
             ))}
             <li>
-              <Link href="/login" onClick={() => setOpen(false)} className="block py-3 text-base">
-                Account
+              <Link href={accountHref} onClick={() => setOpen(false)} className="block py-3 text-base">
+                {userName ? `My account (${accountLabel})` : "Log in or create account"}
               </Link>
             </li>
           </ul>

@@ -19,11 +19,12 @@ export type Product = {
   isNew: boolean;
   isBestSeller: boolean;
   imageUrl: string | null;
+  categoryId?: string;
   categorySlug: string;
   categoryName: string;
 };
 
-export type Category = { slug: string; name: string; description: string; productCount: number };
+export type Category = { id?: string; slug: string; name: string; description: string; productCount: number; sortOrder?: number };
 export type ProductList = { items: Product[]; total: number; page: number; pageSize: number };
 export type Result<T> = { data: T | null; error: boolean; notFound: boolean };
 
@@ -67,4 +68,16 @@ export async function getProduct(slug: string): Promise<Result<Product>> {
 export async function getCategories(): Promise<Result<Category[]>> {
   const r = await get<{ items: Category[] }>("/api/v1/products/categories");
   return { data: r.data?.items ?? null, error: r.error, notFound: r.notFound };
+}
+
+export type Banner = { id: string; title: string; subtitle: string; linkUrl: string };
+export async function getBanners(): Promise<Banner[]> {
+  const r = await get<{ items: Banner[] }>("/api/v1/store/banners");
+  return r.data?.items ?? [];
+}
+
+export type Review = { id: string; rating: number; title: string; body: string; createdAt: string; firstName: string };
+export async function getReviews(slug: string): Promise<Review[]> {
+  const r = await get<{ items: Review[] }>(`/api/v1/products/${encodeURIComponent(slug)}/reviews`);
+  return r.data?.items ?? [];
 }

@@ -75,37 +75,111 @@ const products: Seed[] = [
 
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
-async function seed() {
-  const catIds: Record<string, string> = {};
-  for (const c of categories) {
-    const r = await pool.query(
-      `INSERT INTO categories (slug, name, description, sort_order) VALUES ($1,$2,$3,$4)
-       ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, sort_order = EXCLUDED.sort_order
-       RETURNING id`,
-      [c.slug, c.name, c.description, c.sort]
-    );
-    catIds[c.slug] = r.rows[0].id;
-  }
+async function flagSet(key: string): Promise<boolean> {
+  const r = await pool.query("SELECT 1 FROM store_settings WHERE key = $1", [key]);
+  return (r.rowCount ?? 0) > 0;
+}
+async function setFlag(key: string) {
+  await pool.query("INSERT INTO store_settings (key, value) VALUES ($1, 'done') ON CONFLICT (key) DO NOTHING", [key]);
+}
 
-  for (const p of products) {
-    await pool.query(
-      `INSERT INTO products (slug, name, description, category_id, price_kobo, compare_at_price_kobo, size, ingredients,
-         skin_types, shades, stock, rating, review_count, is_featured, is_new, is_best_seller, is_demo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true)
-       ON CONFLICT (slug) DO NOTHING`,
-      [
-        slugify(p.name), p.name, p.desc, catIds[p.cat], p.naira * 100, p.was ? p.was * 100 : null, p.size, p.ing,
-        p.skin ?? [], p.shades ?? [], p.stock, p.rating, p.reviews,
-        p.flags.includes("f"), p.flags.includes("n"), p.flags.includes("b"),
-      ]
+// Clearly marked demo orders so the admin dashboard looks alive. They are flagged is_demo = true.
+const demoOrders = [
+  { n: 1, name: "Demo Customer A", city: "Ikeja", state: "Lagos", days: 12, status: "delivered", picks: [["radiance-glow-serum", 1], ["daily-spf-50-sunscreen", 2]] },
+  { n: 2, name: "Demo Customer B", city: "Abuja", state: "FCT", days: 10, status: "delivered", picks: [["velvet-matte-lipstick", 2]] },
+  { n: 3, name: "Demo Customer C", city: "Ibadan", state: "Oyo", days: 8, status: "shipped", picks: [["nourishing-body-butter", 1], ["vanilla-silk-body-lotion", 1]] },
+  { n: 4, name: "Demo Customer D", city: "Lekki", state: "Lagos", days: 6, status: "processing", picks: [["midnight-rose-eau-de-parfum", 1]] },
+  { n: 5, name: "Demo Customer E", city: "Port Harcourt", state: "Rivers", days: 4, status: "confirmed", picks: [["soft-glow-foundation", 1], ["cream-blush", 1]] },
+  { n: 6, name: "Demo Customer F", city: "Yaba", state: "Lagos", days: 3, status: "confirmed", picks: [["gentle-foaming-cleanser", 2], ["hydrating-face-cream", 1]] },
+  { n: 7, name: "Demo Customer G", city: "Enugu", state: "Enugu", days: 1, status: "pending", picks: [["rayora-bloom-eau-de-parfum", 1]] },
+  { n: 8, name: "Demo Customer H", city: "Surulere", state: "Lagos", days: 0, status: "cancelled", picks: [["golden-aura-body-mist", 1]] },
+] as const;
+
+async function seedDemoOrders() {
+  for (const o of demoOrders) {
+    const number = `RB-DEMO-${String(o.n).padStart(3, "0")}`;
+    const items: { id: string; name: string; price: number; qty: number }[] = [];
+    for (const [slug, qty] of o.picks) {
+      const r = await pool.query("SELECT id, name, price_kobo FROM products WHERE slug = $1", [slug]);
+      if (r.rows[0]) items.push({ id: r.rows[0].id, name: r.rows[0].name, price: r.rows[0].price_kobo, qty });
+    }
+    if (items.length === 0) continue;
+    const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+    const fee = o.state === "Lagos" ? 250000 : 450000;
+    const paid = o.status !== "pending" && o.status !== "cancelled";
+    const created = await pool.query(
+      `INSERT INTO orders (order_number, customer_name, email, phone, address, city, state, subtotal_kobo, delivery_fee_kobo,
+         total_kobo, status, payment_status, is_demo, created_at)
+       VALUES ($1,$2,'demo@example.com','08000000000','Demo address',$3,$4,$5,$6,$7,$8,$9,true, now() - ($10::text || ' days')::interval)
+       ON CONFLICT (order_number) DO NOTHING RETURNING id`,
+      [number, o.name, o.city, o.state, subtotal, fee, subtotal + fee, o.status, paid ? "paid" : "unpaid", String(o.days)]
     );
+    if (created.rows[0]) {
+      for (const i of items) {
+        await pool.query(
+          "INSERT INTO order_items (order_id, product_id, product_name, unit_price_kobo, quantity) VALUES ($1,$2,$3,$4,$5)",
+          [created.rows[0].id, i.id, i.name, i.price, i.qty]
+        );
+      }
+    }
+  }
+}
+
+async function seed() {
+  // Seed the catalogue only once, so products you delete later do not come back.
+  if (await flagSet("catalogue_seeded")) {
+    console.log("Catalogue already set up, skipping.");
+  } else {
+    const existing = (await pool.query("SELECT count(*)::int AS n FROM products")).rows[0].n as number;
+    if (existing > 0) {
+      await setFlag("catalogue_seeded");
+      console.log("Products already exist, skipping catalogue seed.");
+    } else {
+      const catIds: Record<string, string> = {};
+      for (const c of categories) {
+        const r = await pool.query(
+          `INSERT INTO categories (slug, name, description, sort_order) VALUES ($1,$2,$3,$4)
+           ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, sort_order = EXCLUDED.sort_order
+           RETURNING id`,
+          [c.slug, c.name, c.description, c.sort]
+        );
+        catIds[c.slug] = r.rows[0].id;
+      }
+      for (const p of products) {
+        await pool.query(
+          `INSERT INTO products (slug, name, description, category_id, price_kobo, compare_at_price_kobo, size, ingredients,
+             skin_types, shades, stock, rating, review_count, is_featured, is_new, is_best_seller, is_demo)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true)
+           ON CONFLICT (slug) DO NOTHING`,
+          [
+            slugify(p.name), p.name, p.desc, catIds[p.cat], p.naira * 100, p.was ? p.was * 100 : null, p.size, p.ing,
+            p.skin ?? [], p.shades ?? [], p.stock, p.rating, p.reviews,
+            p.flags.includes("f"), p.flags.includes("n"), p.flags.includes("b"),
+          ]
+        );
+      }
+      await setFlag("catalogue_seeded");
+      console.log(`Seeded ${categories.length} categories and ${products.length} products.`);
+    }
   }
 
   await pool.query(
     `INSERT INTO store_settings (key, value) VALUES ('delivery_fee_lagos_kobo','250000'), ('delivery_fee_other_kobo','450000')
      ON CONFLICT (key) DO NOTHING`
   );
-  console.log(`Seeded ${categories.length} categories and ${products.length} products.`);
+
+  if (!(await flagSet("demo_orders_seeded"))) {
+    await seedDemoOrders();
+    await setFlag("demo_orders_seeded");
+    console.log("Added demo orders (marked as demo data).");
+  }
+
+  if (!(await flagSet("welcome_banner_seeded"))) {
+    await pool.query("INSERT INTO banners (title, subtitle, link_url) VALUES ($1,$2,$3)", [
+      "Welcome to Rayora Beauty", "Shades and formulas made for every skin tone.", "/shop",
+    ]);
+    await setFlag("welcome_banner_seeded");
+  }
 }
 
 seed()
